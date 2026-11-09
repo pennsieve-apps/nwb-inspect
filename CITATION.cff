@@ -225,6 +225,14 @@ references:
     name: Zenodo
   version: 0.82.0
   repository-code: https://github.com/dandi/dandi-cli
+- type: software
+  title: 'dandischema: Schemata for DANDI archive project'
+  authors:
+  - name: DANDI developers
+  version: 0.14.0
+  repository-code: https://github.com/dandi/dandi-schema
+  url: https://github.com/dandi/dandi-schema
+  license: Apache-2.0
 - type: article
   title: 'Matplotlib: A 2D Graphics Environment'
   authors:

@@ -92,6 +92,73 @@ def _has_cached_spec(path: Path) -> bool:
 
 
 # ------------------------------------------------------------------------------------------ inspector
+# Two NWB Inspector 0.7.2 checks read a whole array: check_regular_timestamps (np.diff over every
+# timestamp, ~4 copies: 3.5 GB for an hour of 30 kHz timestamps) and check_negative_spike_times (every
+# spike time). Above BIG_ARRAY elements they run here in CHUNK-sized pieces with the same result and
+# message; below it NWB Inspector's own function runs.
+BIG_ARRAY = 5_000_000
+CHUNK = 2_000_000
+_CHECKS = None
+
+
+def bounded_checks() -> list:
+    global _CHECKS
+    if _CHECKS is not None:
+        return _CHECKS
+    import numpy as np
+    from nwbinspector import available_checks, register_check
+    from nwbinspector._types import InspectorMessage, Severity
+
+    originals = {c.__name__: c for c in list(available_checks)}
+    reg_ts, neg_sp = originals["check_regular_timestamps"], originals["check_negative_spike_times"]
+
+    def _len(d):
+        try:
+            return int(d.shape[0])
+        except Exception:
+            return len(d)
+
+    @register_check(importance=reg_ts.importance, neurodata_type=reg_ts.neurodata_type)
+    def check_regular_timestamps(time_series, time_tolerance_decimals: int = 9, gb_severity_threshold: float = 1.0):
+        ts = time_series.timestamps
+        if ts is None or not hasattr(ts, "shape") or _len(ts) <= BIG_ARRAY:
+            return reg_ts.__wrapped__(time_series, time_tolerance_decimals, gb_severity_threshold)
+        n = _len(ts)
+        step = None
+        for a in range(0, n - 1, CHUNK):
+            x = np.asarray(ts[a:min(n, a + CHUNK + 1)], dtype=float)
+            d = np.unique(np.diff(x).round(decimals=time_tolerance_decimals))
+            if len(d) != 1 or (step is not None and d[0] != step):
+                return None
+            step = d[0]
+        if not step:
+            return None
+        t0, t1 = float(ts[0]), float(ts[1])
+        severity = Severity.HIGH if n * ts.dtype.itemsize > gb_severity_threshold * 1e9 else Severity.LOW
+        return InspectorMessage(severity=severity, message=(
+            "TimeSeries appears to have a constant sampling rate. "
+            f"Consider specifying starting_time={t0} and rate={1 / (t1 - t0)} instead of timestamps."))
+
+    @register_check(importance=neg_sp.importance, neurodata_type=neg_sp.neurodata_type)
+    def check_negative_spike_times(units_table):
+        if "spike_times" not in units_table:
+            return None
+        data = units_table["spike_times"].target.data
+        if not hasattr(data, "shape") or _len(data) <= BIG_ARRAY:
+            return neg_sp.__wrapped__(units_table)
+        n = _len(data)
+        for a in range(0, n, CHUNK):
+            if np.any(np.asarray(data[a:a + CHUNK]) < 0):
+                return InspectorMessage(message=(
+                    "This Units table contains negative spike times. Time should generally be aligned to the earliest "
+                    "time reference in the NWBFile."))
+        return None
+
+    repl = {"check_regular_timestamps": check_regular_timestamps, "check_negative_spike_times": check_negative_spike_times}
+    _CHECKS = [repl.get(name, c) for name, c in originals.items()]
+    return _CHECKS
+
+
 def _inspector_messages(path: Path, fmt: str, config_name: str, threshold: str, select=None) -> list[dict]:
     from nwbinspector import Importance, inspect_nwbfile, inspect_nwbfile_object, load_config
 
@@ -105,10 +172,10 @@ def _inspector_messages(path: Path, fmt: str, config_name: str, threshold: str, 
             # NWB Inspector 0.7.2's compression checks read `.compressor`, which zarr 3 arrays no longer have
             # (TypeError on every dataset); the content summary reports Zarr compression instead.
             ignore = None if select else ["check_large_dataset_compression", "check_small_dataset_compression"]
-            msgs = list(inspect_nwbfile_object(nwbfile_object=nwb, config=config, importance_threshold=thr,
-                                               select=select, ignore=ignore))
+            msgs = list(inspect_nwbfile_object(nwbfile_object=nwb, checks=bounded_checks(), config=config,
+                                               importance_threshold=thr, select=select, ignore=ignore))
     else:
-        msgs = list(inspect_nwbfile(nwbfile_path=str(path), skip_validate=True, config=config,
+        msgs = list(inspect_nwbfile(nwbfile_path=str(path), skip_validate=True, checks=bounded_checks(), config=config,
                                     importance_threshold=thr, select=select))
     out = []
     for m in msgs:
@@ -163,20 +230,40 @@ def _offline_dandi():
 
 def run_dandi(path: Path, fmt: str, inspector_issues: list[dict] | None, inspector_config: str,
               threshold: str) -> tuple[list[dict], dict]:
-    """DANDI upload readiness of one file. `inspector_issues` are the inspector step's messages when it ran
-    with the DANDI configuration (then its CRITICAL ones are not repeated here)."""
+    """DANDI upload readiness of one file.
+
+    `dandi validate` (and `dandi upload`, which validates first) runs NWB Inspector with its DANDI
+    configuration and turns EVERY CRITICAL or ERROR message into a validation error
+    (dandi/files/bases.py, NWBI_IMPORTANCE_TO_DANDI_SEVERITY), not only the nine checks the DANDI
+    configuration raises to CRITICAL. `inspector_issues` are the inspector step's messages; when that
+    step ran with the DANDI configuration they already are exactly those, otherwise NWB Inspector is
+    run again here with the DANDI configuration and its CRITICAL / ERROR messages are added to the dandi
+    group (unless the inspector step reported the same message). `blocking` in the returned info lists
+    what dandi would refuse."""
     out: list[dict] = []
     info: dict = {"suggested_path": None, "filename_conforms": None, "metadata": {}}
 
-    # 1. NWB Inspector's DANDI-critical checks (subject, species, sex, age, ids without slashes).
+    # 1. NWB Inspector with the DANDI configuration: every CRITICAL / ERROR blocks DANDI.
     if inspector_issues is None or inspector_config != "dandi":
         try:
-            msgs = _inspector_messages(path, fmt, "dandi", "CRITICAL", select=dandi_critical_checks())
+            msgs = _inspector_messages(path, fmt, "dandi", "CRITICAL")
         except Exception as e:
             msgs = [issue("dandi", "ERROR", "dandi.inspector_error", f"{type(e).__name__}: {e}")]
+        def key(m):
+            return m["importance"], m["check_name"], m["location"], m["message"]
+
+        same = {key(m): m for m in (inspector_issues or [])}
         for m in msgs:
+            if key(m) in same:  # the inspector step reported it already: mark it there
+                same[key(m)]["dandi_blocking"] = True
+                continue
             m["check_group"] = "dandi"
+            m["dandi_blocking"] = True
             out.append(m)
+    else:
+        for m in inspector_issues:
+            if m["importance"] in ("CRITICAL", "ERROR"):
+                m["dandi_blocking"] = True
 
     if fmt == "zarr":
         out.append(issue("dandi", "BEST_PRACTICE_SUGGESTION", "dandi.zarr_nwb",

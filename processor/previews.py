@@ -74,7 +74,8 @@ def raster(t: Tree, s: dict, title: str):
             chosen, note = good, " labelled good"
     if len(chosen) > MAX_UNITS:
         chosen = np.sort(np.random.default_rng(0).choice(chosen, MAX_UNITS, replace=False))
-    # The window: the middle 60 s of the file's data span (from the summary), else of the spike times.
+    # The window: the middle 60 s of the file's data span (series and intervals, from the summary); when the file
+    # has neither, the middle of the first unit's spike train (its first and last spike).
     if s.get("t_start") is not None and s.get("t_stop") is not None:
         mid = (s["t_start"] + s["t_stop"]) / 2
     else:
@@ -102,8 +103,7 @@ def raster(t: Tree, s: dict, title: str):
     if not trains:
         return None
     if all(len(x) == 0 for _, x in trains):
-        # nothing in the middle window: centre it on the spikes instead
-        return None
+        return None  # no chosen unit fires in that window: no raster rather than an empty one
     # Order rows by depth when the table has it.
     depth = None
     for c in ("depth", "peak_channel_depth", "y", "peak_channel", "max_electrode", "peak_channel_id"):
@@ -229,6 +229,8 @@ def pose_frame(t: Tree, s: dict, title: str):
             conf.append(np.nan)
     pts = np.array(pts)
     first = g[p["keypoints"][0]].get("data")
+    unit = str(t.attr(first, "unit") or "").strip()
+    image_coords = unit.lower() in ("pixels", "pixel", "px", "")
     a, b = max(0, i - TRAJ_FRAMES // 2), min(n, i + TRAJ_FRAMES // 2)
     traj = np.asarray(first[a:b], dtype=float)[:, :2]
     fig, ax = _fig(5.4, 4.2)
@@ -259,16 +261,20 @@ def pose_frame(t: Tree, s: dict, title: str):
         if ok:
             ax.annotate(nm, (x, y), fontsize=5.5, color=INK, xytext=(3, 3), textcoords="offset points")
     # zoom on the animal: the keypoints of this frame with a margin (the path is clipped to it)
+    # The margin scales with the data: 60 % of the animal's extent in this frame, at least 5 % of the
+    # span of the nearby path, so it works in pixels, cm or metres.
     if good.any():
         lo, hi = pts[good].min(axis=0), pts[good].max(axis=0)
-        pad = max(40.0, 0.6 * float((hi - lo).max()))
+        span = np.nanmax(traj, axis=0) - np.nanmin(traj, axis=0) if np.isfinite(traj).any() else hi - lo
+        pad = max(0.6 * float((hi - lo).max()), 0.05 * float(np.nanmax(span)), 1e-9)
         ax.set_xlim(lo[0] - pad, hi[0] + pad)
-        ax.set_ylim(hi[1] + pad, lo[1] - pad)
-    else:
+        ax.set_ylim(lo[1] - pad, hi[1] + pad)
+    if image_coords:
         ax.invert_yaxis()
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("x (px)", fontsize=8)
-    ax.set_ylabel("y (px)", fontsize=8)
+    u = unit or "unit not set"
+    ax.set_xlabel(f"x ({u})", fontsize=8)
+    ax.set_ylabel(f"y ({u})", fontsize=8)
     cb = fig.colorbar(sc, ax=ax, fraction=0.04, pad=0.02)
     cb.set_label("confidence", fontsize=7)
     cb.ax.tick_params(labelsize=6)
@@ -276,7 +282,7 @@ def pose_frame(t: Tree, s: dict, title: str):
     fig.tight_layout()
     missing = int((~good).sum())
     cap = (f"Keypoints of {p['path']} ({p['n_keypoints']} keypoints, {n:,} frames) at frame {i}, coloured by "
-           f"confidence, image coordinates (y down); grey: the path of '{names[0]}' over {b - a} frames around it"
+           f"confidence, " + ("image coordinates (y down)" if image_coords else f"in {unit} (y up)") + "; grey: the path of '{names[0]}' over {b - a} frames around it"
            + (f"; {missing} keypoint(s) missing in this frame" if missing else "")
            + ". Check that the points sit on a plausible body shape (skeleton lines are not crossed), that "
            "confidence is high on visible body parts, and that the path is smooth rather than jumping.")
@@ -293,7 +299,8 @@ def timeline(t: Tree, s: dict, title: str):
     fig, ax = _fig(7.2, 0.6 + 0.45 * len(tabs) + 0.8)
     labels = []
     tmin, tmax = np.inf, -np.inf
-    for j, x in enumerate(tabs):
+    for x in tabs:
+        j = len(labels)  # row of this table (tables without valid times are skipped without a gap)
         g = t.get(x["path"])
         n = min(x["n_intervals"], MAX_INTERVALS)
         a = np.asarray(g.get("start_time")[:n], dtype=float)

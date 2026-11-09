@@ -171,7 +171,7 @@ def summarise(t: Tree, size_bytes: int) -> dict:
     if sub is not None:
         subj = {"type": t.ntype(sub)}
         for k in ("subject_id", "species", "sex", "age", "date_of_birth", "genotype", "strain", "weight",
-                  "description", "strain"):
+                  "description"):
             v = t.scalar(sub.get(k)) if sub.get(k) is not None else None
             if v not in (None, ""):
                 subj[k] = v if not isinstance(v, str) else v[:200]

@@ -143,8 +143,9 @@ def inspect_file(path: Path, fmt: str, rel: str, p: dict, out_dir: Path, file_id
             rec["summary"] = summarise(tree, rec["size_bytes"] or 0)
             rec["timings_s"]["summary"] = round(time.time() - t, 2)
             if p["PREVIEWS"]:
+                tp = time.time()
                 figs = make_previews(tree, rec["summary"], out_dir, file_id)
-                rec["timings_s"]["previews"] = round(time.time() - t - rec["timings_s"]["summary"], 2)
+                rec["timings_s"]["previews"] = round(time.time() - tp, 2)
     except Exception as e:
         rec["error"] = f"{type(e).__name__}: {e}"
         log.warning("%s: summary failed: %s", rel, rec["error"])
@@ -156,29 +157,65 @@ def inspect_file(path: Path, fmt: str, rel: str, p: dict, out_dir: Path, file_id
     # IMPORTANCE_THRESHOLD applies to every check group (ERROR = a check could not run, always kept).
     thr = ck.IMPORTANCE_RANK[p["IMPORTANCE_THRESHOLD"]]
     msgs = [m for m in msgs if ck.IMPORTANCE_RANK.get(m["importance"], 3) >= thr]
-    counts = {k: 0 for k in ("CRITICAL", "BEST_PRACTICE_VIOLATION", "BEST_PRACTICE_SUGGESTION", "ERROR")}
-    for m in msgs:
-        counts[m["importance"]] = counts.get(m["importance"], 0) + 1
     rec["messages"] = msgs
-    rec["counts"] = counts
-    by_group = {}
-    for m in msgs:
-        by_group.setdefault(m["check_group"], 0)
-        by_group[m["check_group"]] += 1
-    rec["counts_by_group"] = by_group
+    rec["_unreadable"] = unreadable
     if unreadable and not rec["error"]:
         rec["error"] = next((m["message"] for m in msgs if m["check_name"].endswith("read_error")), "unreadable")
-    rec["status"] = status_of(counts, unreadable)
+    recount(rec)
     if "dandi" in checks:
+        # As `dandi validate` / `dandi upload`: schema errors, every NWB Inspector CRITICAL or ERROR under
+        # the DANDI configuration (marked dandi_blocking by checks.run_dandi), and DANDI's own metadata errors.
         rec["dandi_ready"] = bool(not unreadable and not any(
-            m["importance"] == "CRITICAL" and (m["check_group"] in ("schema", "dandi") or
-                                               (m["check_group"] == "inspector" and m["check_name"] in ck.dandi_critical_checks()))
+            m.get("dandi_blocking") or (m["check_group"] in ("schema", "dandi") and m["importance"] in ("CRITICAL", "ERROR"))
             for m in msgs))
         if "schema" not in checks:
             rec["dandi_ready_note"] = "schema validation was not run (CHECKS)"
     rec["headline"] = headline(rec["summary"]) if rec["summary"] else {}
     rec["seconds"] = round(time.time() - t0, 2)
     return rec, figs
+
+
+def recount(rec: dict) -> None:
+    """counts, counts_by_group and status from rec["messages"]."""
+    counts = {k: 0 for k in ("CRITICAL", "BEST_PRACTICE_VIOLATION", "BEST_PRACTICE_SUGGESTION", "ERROR")}
+    by_group: dict = {}
+    for m in rec["messages"]:
+        counts[m["importance"]] = counts.get(m["importance"], 0) + 1
+        by_group[m["check_group"]] = by_group.get(m["check_group"], 0) + 1
+    rec["counts"] = counts
+    rec["counts_by_group"] = by_group
+    rec["status"] = status_of(counts, rec.get("_unreadable", False))
+
+
+def check_unique_identifiers(files: list[dict], threshold: str) -> int:
+    """NWB Inspector's folder-level check (CRITICAL when it inspects a folder): every NWB file needs its own
+    identifier. Inspection here runs file by file, so it is applied across all files of the run. Not
+    DANDI-blocking: `dandi validate` checks files one at a time and does not run it."""
+    from . import checks as ck
+
+    if ck.IMPORTANCE_RANK["CRITICAL"] < ck.IMPORTANCE_RANK[threshold]:
+        return 0
+    by_id: dict = {}
+    for f in files:
+        ident = ((f.get("summary") or {}).get("identifier"))
+        if ident:
+            by_id.setdefault(str(ident), []).append(f)
+    n = 0
+    for ident, group in by_id.items():
+        if len(group) < 2:
+            continue
+        names = sorted(f["file"] for f in group)
+        for f in group:
+            others = [x for x in names if x != f["file"]]
+            f["messages"].append(ck.issue(
+                "inspector", "CRITICAL", "check_unique_identifiers",
+                f"The identifier '{ident}' is also used by {len(others)} other file(s) in this input: "
+                f"{', '.join(others[:5])}{' ...' if len(others) > 5 else ''}. The identifier of every NWBFile must "
+                "be unique (a new UUID per file); derived files should not copy their source's identifier.",
+                object_type="NWBFile", object_name="root", location="/"))
+            recount(f)
+            n += 1
+    return n
 
 
 def make_previews(tree, summary: dict, out_dir: Path, file_id: str):
@@ -190,7 +227,7 @@ def make_previews(tree, summary: dict, out_dir: Path, file_id: str):
     for what, fn in PREVIEWS:
         t = time.time()
         try:
-            res = fn(tree, summary, file_id if len(file_id) <= 48 else file_id[:47] + "…")
+            res = fn(tree, summary, file_id if len(file_id) <= 34 else file_id[:33] + "…")
         except Exception as e:
             log.warning("%s: %s preview failed: %s: %s", file_id, what, type(e).__name__, e)
             log.debug(traceback.format_exc())
@@ -286,6 +323,12 @@ def main(argv=None) -> int:
                  c.get("BEST_PRACTICE_VIOLATION", 0), c.get("BEST_PRACTICE_SUGGESTION", 0), c.get("ERROR", 0),
                  rec.get("dandi_ready"), len(figs), rec.get("seconds", 0),
                  f" error={rec['error']}" if rec.get("error") else "")
+
+    n_dup = check_unique_identifiers(files, p["IMPORTANCE_THRESHOLD"])
+    if n_dup:
+        log.warning("check_unique_identifiers: %d file(s) share their identifier with another file", n_dup)
+    for f in files:
+        f.pop("_unreadable", None)
 
     tools = tool_versions()
     generated = dt.datetime.now(dt.timezone.utc).isoformat()

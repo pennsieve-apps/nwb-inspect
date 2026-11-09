@@ -39,8 +39,15 @@ and Steeve Laquitaine, Milo Imbeni, Joseph Tharayil, James Isbister and Michael 
 
 Each file gets a status: **pass** (no critical problem, no best-practice violation), **warn**
 (best-practice violations: valid NWB that should be fixed before sharing) or **fail** (a schema
-error, or something NWB Inspector or DANDI rate critical; DANDI would refuse it), and a separate
-**DANDI-ready** flag. `report.pdf` is written for a PI or data manager: a cover page with every file
+error, or something NWB Inspector or DANDI rate critical), and a separate **DANDI-ready** flag:
+whether `dandi validate` (which `dandi upload` runs before uploading) would accept the file's content,
+using dandi's own rule: any schema error, any NWB Inspector CRITICAL message or check error under its
+DANDI configuration (all of them, not only the subject checks the configuration raises), and any
+metadata DANDI cannot read block the upload. Messages that block are marked `dandi_blocking` in
+`report.json` and "blocks DANDI" in the PDF. A file name that does not follow DANDI's layout is
+reported but does not count: `dandi organize` renames files. A fail that is still DANDI-ready is
+possible: the identifier shared with another file (below) is critical for NWB Inspector, but
+`dandi validate` checks one file at a time. `report.pdf` is written for a PI or data manager: a cover page with every file
 and its status, then a page per file with its contents and issues, and a page of previews.
 
 It runs on its own ("check my lab's files") and as the last step of any workflow
@@ -54,7 +61,9 @@ config=load_config("dandi"))` with the chosen importance threshold; the DANDI st
 `dandi.metadata.nwb.get_metadata` / `nwb2asset` and validates the result with dandischema's
 `BareAsset` model (what `dandi upload` sends), and `dandi.organize.create_unique_filenames_from_metadata`
 for the organised name. When the inspector did not run with the DANDI configuration, the DANDI step
-runs NWB Inspector's DANDI-critical checks itself. The summary and previews read the HDF5/Zarr tree
+runs NWB Inspector again with it and keeps the CRITICAL and ERROR messages. Across all files of a run,
+`check_unique_identifiers` (NWB Inspector runs it when it inspects a folder) flags files that share
+an `identifier`, critical. The summary and previews read the HDF5/Zarr tree
 directly (h5py/zarr: attributes, shapes, a first and last timestamp, bounded slices), not through
 PyNWB objects.
 
@@ -106,19 +115,23 @@ derived files).
 
 ## Large files and memory
 
-Nothing reads a whole dataset. Schema validation and the NWB Inspector look at attributes, shapes and
-dtypes, and NWB Inspector's data checks read their first few hundred elements (for example
-`check_timestamps_ascending` looks at the first 200 timestamps, so a reversal later in a long series
-is not seen). The summary reads the first and last timestamp of each series, label and area columns
-of tables up to 200,000 rows, and the dataset metadata (chunks, filters, bytes stored). The previews
-read at most 150 units' spikes in a 60 s window (spike times read once, in 2.5-million-value blocks,
-up to 200 million spikes), 6,000 samples of 64 ROIs, one frame of each keypoint plus 600 frames of
-one, and 20,000 rows per interval table. So run time grows with the number of objects in the file,
-not its size: the 6.1 GB IBL raw cut took 18 s and the 5.1 GB Grosmark file 51 s (under emulation;
-most of it importing libraries and reading the schema), at 0.8 GB peak memory or less. The exceptions are files with
-hundreds of millions of spikes (the raster stops reading at 200 million) and files with tens of
-thousands of objects (the inspector walks every one); a run over many files is bounded by the 900 s
-step limit, so split very large batches across steps.
+Reads are bounded, so memory does not grow with recording length. Schema validation and the NWB
+Inspector look at attributes, shapes and dtypes, and most NWB Inspector data checks read their first
+few hundred elements (for example `check_timestamps_ascending` looks at the first 200 timestamps, so a
+reversal later in a long series is not seen). Two NWB Inspector 0.7.2 checks read a whole array:
+`check_regular_timestamps` (every timestamp, with several temporary copies: about 3.5 GB for an hour
+of 30 kHz timestamps) and `check_negative_spike_times` (every spike time). For arrays over 5 million
+values this app runs its own versions of these two checks, with the same logic and messages, over
+2-million-value pieces (at most ~50 MB at a time); smaller arrays go to NWB Inspector's functions. The
+summary reads the first and last timestamp of each series, label and area columns of tables up to
+200,000 rows, and the dataset metadata (chunks, filters, bytes stored). The previews read at most 150
+units' spikes in a 60 s window (spike times read once, in 2.5-million-value pieces, up to 200 million
+spikes), 6,000 samples of 64 ROIs, one frame of each keypoint plus 600 frames of one, and 20,000 rows
+per interval table. Measured: the 10-minute IBL raw cut (18 million timestamps) peaks at 257 MB RSS (0.33 GB for the container), most of it the libraries;
+NWB Inspector's own `check_regular_timestamps` alone took it from 113 to 509 MB. So run time grows with the number of
+objects in a file, not its size; files with tens of thousands of objects take longest (the inspector
+walks every one), and a run over many files is bounded by the 900 s step limit, so split very large
+batches across steps.
 
 ## Runtime
 
@@ -129,12 +142,12 @@ parameters. Wall = the app's own time; peak memory = the container's `memory.pea
 
 | Input | Files | Wall (app) | Peak memory (cgroup) |
 |---|---|---|---|
-| IBL (`data/ibl/`): processed 0.5 GB + raw cut 6.1 GB | 2 | 156 s (126 s + 18 s) | 0.79 GB |
-| DANDI 002047 (6 sessions) + pose-kinematics and behavior-syllables outputs | 18 | 358 s (source 28-60 s, outputs 3-15 s each) | 0.73 GB |
-| Allen Visual Coding 2p, 0.8 GB | 1 | 41 s | 0.42 GB |
-| Grosmark, 5.1 GB | 1 | 57 s | 0.46 GB |
-| Ground truth (DANDI 001250), 0.6 GB | 1 | 39 s | 0.41 GB |
-| Synthetic fixture (7 files incl. 64 MB uncompressed and NWB-Zarr) | 7 | 41.5 s | 0.36 GB |
+| IBL (`data/ibl/`): processed 0.5 GB + raw cut 6.1 GB + ephys-curate units | 3 | 36 s | 0.76 GB |
+| DANDI 002047 (6 sessions) + pose-estimate, pose-kinematics, behavior-syllables outputs | 19 | 96 s | 0.87 GB |
+| Allen Visual Coding 2p, 0.8 GB + ophys-traces output | 2 | 9 s | 0.30 GB |
+| Grosmark, 5.1 GB | 1 | 12 s | 0.34 GB |
+| Ground truth (DANDI 001250), 0.6 GB | 1 | 10 s | 0.27 GB |
+| Synthetic fixture (9 files incl. 64 MB uncompressed and NWB-Zarr) | 9 | 41 s | 0.37 GB |
 
 Image: 0.64 GB uncompressed, 0.21 GB compressed (python:3.12-slim plus PyNWB, NWB Inspector, dandi, hdmf-zarr, Matplotlib, with
 precompiled byte code: the root file system is read-only at run time, and compiling the libraries on
@@ -152,17 +165,23 @@ Reports are in `data/work/<demo>/nwb-inspect/` of the workflow repository.
 | File | Status | Critical / violations / suggestions | DANDI-ready | What it found |
 |---|---|---|---|---|
 | IBL processed (000409) | warn | 0 / 28 / 11 | yes | pose units `px` instead of `pixels` (16 series), 12 electrode locations that are not Allen CCF terms (e.g. "Dentate gyrus molecular layer"), non-standard module names (`wheel`, `pupil`, ...), no experimenter/keywords. 1,359 units, 404 trials, 3 cameras of Lightning Pose. |
-| IBL raw cut (ours) | warn | 0 / 8 / 3 | yes | the same CCF names on the electrodes; no experimenter, keywords; an all-NaN `imp` column. |
-| DANDI 002047, 6 sessions | fail | 1 / 0 / 1-3 | yes | `MotionCorrectedVideo` points at an external mp4 that is not next to the file: our staging copied only the behaviour video, so this is expected locally (on DANDI the asset exists). Otherwise clean. |
-| behavior-syllables outputs (6) | fail | 1 / 0 / 5 | **no** | schema error: `general/source_script` has no `file_name` attribute (PyNWB requires it when `source_script` is set). Also no `session_id`, experimenter, institution, keywords, experiment description. |
-| pose-kinematics outputs (6) | warn | 0 / 15 / 5 | yes | unit `cm` on 15 SpatialSeries (NWB wants `centimeters`); no `session_id`, experimenter, institution, keywords, experiment description. |
+| IBL raw cut (ours) | fail | 1 / 8 / 3 | yes | shares its identifier with the ephys-curate output (`check_unique_identifiers`); the same CCF names on the electrodes; no experimenter, keywords. |
+| ephys-curate units (IBL) | fail | 3 / 9 / 6 | **no** | the subject lost its sex and date of birth (only `subject_id` and `species` were copied: `check_subject_sex`, `check_subject_age` critical, DANDI refuses it); identifier copied from the raw cut; Units without `resolution`. |
+| DANDI 002047, 6 sessions | fail | 1 / 0 / 1-3 | **no** | `MotionCorrectedVideo` points at an external mp4 that is not next to the file: our staging copied only the behaviour video, so this is expected locally (on DANDI the asset exists); `dandi validate` gives the same error. |
+| pose-estimate, pose-kinematics, behavior-syllables outputs (13) | pass | 0 / 0 / 0 | yes | clean (an earlier version of behavior-syllables had a schema error on `source_script` and pose-kinematics used `cm` as a unit; both fixed by their builders). |
 | Allen Visual Coding 2p (000728) | warn | 0 / 2 / 3 | yes | `IndexSeries` pointing at a `TimeSeries` (deprecated); 353 ROIs. |
+| ophys-traces output (Allen) | pass | 0 / 0 / 2 | yes | |
 | Grosmark (000044) | pass | 0 / 0 / 0 | yes | 68 units, 66 trials. |
 | Ground truth (001250) | warn | 0 / 1 / 4 | yes | Units without `resolution`; the 0.6 GB raw `ElectricalSeries` is stored uncompressed; experimenter not in "Last, First" form. |
 
+DANDI-ready agrees with `dandi validate` (dandi 0.82) on every file compared: the fixture, the 002047
+source file, behavior-syllables, pose-kinematics and Allen outputs.
+
 The synthetic fixture: the clean file passes (HDF5 and NWB-Zarr); missing species → critical,
 DANDI-blocking; empty unit → `check_missing_unit`; timestamps going backwards →
-`check_timestamps_ascending`; `rate` written as text → schema `DtypeError` (fail); the 64 MB
+`check_timestamps_ascending`; `rate` written as text → schema `DtypeError` (fail); a missing external
+video → `check_image_series_external_file_valid`, critical and DANDI-blocking; two files with one
+identifier → `check_unique_identifiers`; the 64 MB
 uncompressed dataset → `check_small_dataset_compression` (a suggestion in NWB Inspector below 10 GB)
 and flagged in the storage summary.
 
@@ -223,6 +242,8 @@ lists in CITATION.cff.
   doi:[10.5281/zenodo.8034516](https://doi.org/10.5281/zenodo.8034516).
 - Halchenko Y, Wodder JT II, Christian H, Ghosh S, et al. dandi/dandi-cli (software, 0.82.0), Zenodo,
   doi:[10.5281/zenodo.3692138](https://doi.org/10.5281/zenodo.3692138).
+- DANDI developers. dandischema: Schemata for DANDI archive project (software, 0.14.0),
+  https://github.com/dandi/dandi-schema.
 - John D. Hunter (2007). Matplotlib: A 2D Graphics Environment. *Computing in Science & Engineering*
   9:90-95. doi:[10.1109/MCSE.2007.55](https://doi.org/10.1109/MCSE.2007.55).
 

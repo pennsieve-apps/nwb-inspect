@@ -76,7 +76,7 @@ def test_exit_and_outputs(default_run):
     for name in ("report.json", "report.pdf", "issues.csv", "summary.json", "provenance.json"):
         assert (out / name).is_file(), name
     assert (out / "report.pdf").read_bytes()[:4] == b"%PDF"
-    assert len(files) == 6 + int(HAS_ZARR)
+    assert len(files) == 8 + int(HAS_ZARR)
     prov = json.loads((out / "provenance.json").read_text())
     assert set(prov) == PROV_KEYS
     assert "10.7554/eLife.78362" in prov["citations"]
@@ -143,6 +143,50 @@ def test_uncompressed_large_dataset(default_run):
     assert big["flag_uncompressed_large"] is True and big["compression"] is None
 
 
+def test_any_inspector_critical_blocks_dandi(default_run):
+    """Regression: dandi 0.82 turns EVERY NWB Inspector CRITICAL/ERROR (DANDI configuration) into a validation
+    error, not only the subject checks the configuration raises. A missing external video is CRITICAL and
+    `dandi validate` refuses the file, so it must not be DANDI-ready."""
+    f = default_run[2]["sub-M07_ses-S1_behavior+image.nwb"]
+    crit = [m for m in f["messages"] if m["check_name"] == "check_image_series_external_file_valid"]
+    assert crit and crit[0]["importance"] == "CRITICAL" and crit[0]["dandi_blocking"] is True
+    assert f["dandi_ready"] is False
+    # and every DANDI-ready file has no CRITICAL/ERROR inspector message other than the cross-file identifier check
+    for g in default_run[2].values():
+        if g["dandi_ready"]:
+            assert not [m for m in g["messages"] if m["importance"] in ("CRITICAL", "ERROR")
+                        and m["check_name"] != "check_unique_identifiers"], g["file"]
+
+
+def test_unique_identifiers_across_files(default_run):
+    files = default_run[2]
+    for name in ("sub-M07_ses-S1_behavior+image.nwb", "sub-M08_ses-S1_behavior+ecephys.nwb"):
+        assert ("inspector", "check_unique_identifiers") in checks_of(files[name]), name
+        assert files[name]["status"] == "fail"
+    # per-file `dandi validate` does not run it: M08 is otherwise acceptable to DANDI
+    assert files["sub-M08_ses-S1_behavior+ecephys.nwb"]["dandi_ready"] is True
+    others = [f for n, f in files.items() if "M07" not in n and "M08" not in n]
+    assert all(("inspector", "check_unique_identifiers") not in checks_of(f) for f in others)
+
+
+def test_bounded_whole_array_checks(fixture_dir, monkeypatch):
+    """The chunked versions of check_regular_timestamps / check_negative_spike_times give the same messages."""
+    from processor import checks as ck
+
+    path = fixture_dir / "nwb" / "sub-M08_ses-S1_behavior+ecephys.nwb"
+    names = {"check_regular_timestamps", "check_negative_spike_times"}
+
+    def run_once():
+        return sorted((m["check_name"], m["location"], m["message"]) for m in
+                      ck._inspector_messages(path, "hdf5", "dandi", "BEST_PRACTICE_SUGGESTION") if m["check_name"] in names)
+
+    whole = run_once()
+    assert {c for c, _, _ in whole} == names
+    monkeypatch.setattr(ck, "BIG_ARRAY", 10)
+    monkeypatch.setattr(ck, "CHUNK", 7)
+    assert run_once() == whole
+
+
 @pytest.mark.skipif(not HAS_ZARR, reason="hdmf-zarr not installed")
 def test_zarr_nwb(default_run):
     f = default_run[2]["sub-M01_ses-S1_behavior+ecephys+ophys.nwb.zarr"]
@@ -171,6 +215,7 @@ def test_threshold_and_default_config(fixture_dir, tmp_path, monkeypatch):
     f = files["sub-M02_ses-S1_ecephys.nwb"]
     assert ("dandi", "check_subject_species_exists") in checks_of(f)
     assert f["dandi_ready"] is False
+    assert files["sub-M07_ses-S1_behavior+image.nwb"]["dandi_ready"] is False
 
 
 def test_flat_layout_and_symlinks(fixture_dir, tmp_path, monkeypatch):

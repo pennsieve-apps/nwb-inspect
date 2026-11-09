@@ -9,6 +9,11 @@ problem each, so the tests can assert that each problem is caught and the clean 
   sub-M04_ses-S1_behavior.nwb                timestamps going backwards      (best-practice violation)
   sub-M05_ses-S1_behavior.nwb                schema error: starting_time.rate written as text
   sub-M06_ses-S1_ecephys.nwb (--large)       a 64 MB uncompressed dataset     (NWB Inspector suggestion)
+  sub-M07_ses-S1_behavior+image.nwb          an ImageSeries whose external video is missing: CRITICAL for NWB
+                                              Inspector but not one of the DANDI configuration's subject checks;
+                                              `dandi validate` refuses it all the same
+  sub-M08_ses-S1_behavior+ecephys.nwb        shares its identifier with M07 (check_unique_identifiers), regular
+                                              timestamps stored explicitly, one negative spike time
   sub-M01_ses-S1_behavior+ecephys+ophys.nwb.zarr (--zarr)  the clean file as NWB-Zarr
 
 Usage: python -m tests.make_fixture OUT_DIR [--large] [--zarr]   (files go to OUT_DIR/nwb/)
@@ -26,14 +31,14 @@ START = dt.datetime(2026, 3, 2, 10, 30, tzinfo=dt.timezone.utc)
 DURATION = 300.0
 
 
-def _nwb(session_id, subject_kw, **kw):
+def _nwb(session_id, subject_kw, identifier=None, **kw):
     from pynwb import NWBFile
     from pynwb.file import Subject
 
     subj = Subject(**subject_kw) if subject_kw is not None else None
     return NWBFile(
         session_description="Synthetic session for nwb-inspect tests",
-        identifier=f"nwb-inspect-fixture-{session_id}",
+        identifier=identifier or f"nwb-inspect-fixture-{(subject_kw or {}).get('subject_id', 'x')}-{session_id}",
         session_start_time=START,
         session_id=session_id,
         experimenter=["Doe, Jane"],
@@ -219,12 +224,39 @@ def large_uncompressed(path: Path, rng):
     _write(nwb, path)
 
 
+SHARED_ID = "nwb-inspect-fixture-shared-identifier"
+
+
+def missing_external_video(path: Path, rng):
+    from pynwb.image import ImageSeries
+
+    nwb = _nwb("S1", _subject("M07"), identifier=SHARED_ID)
+    nwb.add_acquisition(ImageSeries(name="BehaviorVideo", description="top camera", unit="n.a.",
+                                    external_file=["sub-M07_ses-S1_behavior+image/video_missing.mp4"],
+                                    starting_frame=[0], format="external", rate=30.0, starting_time=0.0,
+                                    num_samples=900))
+    _write(nwb, path)
+
+
+def shared_identifier(path: Path, rng):
+    from pynwb.misc import Units
+
+    nwb = _nwb("S1", _subject("M08"), identifier=SHARED_ID)
+    _position(nwb, rng, n=3000, timestamps=np.arange(3000) / 50.0)  # regular: rate would do
+    nwb.units = Units(name="units", description="units", resolution=1 / 30000.0)
+    nwb.add_unit(spike_times=np.array([-0.5, 1.0, 2.0, 3.0]))
+    nwb.add_unit(spike_times=np.array([0.5, 1.5]))
+    _write(nwb, path)
+
+
 FILES = {
     "sub-M01_ses-S1_behavior+ecephys+ophys.nwb": clean,
     "sub-M02_ses-S1_ecephys.nwb": no_species,
     "sub-M03_ses-S1_behavior.nwb": no_unit,
     "sub-M04_ses-S1_behavior.nwb": bad_timestamps,
     "sub-M05_ses-S1_behavior.nwb": schema_error,
+    "sub-M07_ses-S1_behavior+image.nwb": missing_external_video,
+    "sub-M08_ses-S1_behavior+ecephys.nwb": shared_identifier,
 }
 
 
@@ -242,6 +274,10 @@ def make(out: Path, large=False, zarr=False, seed=0) -> Path:
         src = d / "sub-M01_ses-S1_behavior+ecephys+ophys.nwb"
         with NWBHDF5IO(str(src), "r") as read_io, NWBZarrIO(str(src) + ".zarr", mode="w") as zio:
             zio.export(src_io=read_io, write_args=dict(link_data=False))
+        # a copy is a new file and needs its own identifier (check_unique_identifiers)
+        import zarr
+
+        zarr.open_group(str(src) + ".zarr", mode="r+")["identifier"][...] = "nwb-inspect-fixture-M01-S1-zarr"
     return d
 
 

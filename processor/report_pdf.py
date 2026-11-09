@@ -185,8 +185,9 @@ def _groups(messages):
     for m in messages:
         key = (m["importance"], m["check_group"], m["check_name"])
         g = groups.setdefault(key, {"importance": m["importance"], "group": m["check_group"],
-                                    "check": m["check_name"], "count": 0, "example": m})
+                                    "check": m["check_name"], "count": 0, "example": m, "blocking": False})
         g["count"] += 1
+        g["blocking"] = g["blocking"] or bool(m.get("dandi_blocking"))
     return sorted(groups.values(), key=lambda g: (order.get(g["importance"], 9), -g["count"], g["check"]))
 
 
@@ -215,9 +216,10 @@ def write_pdf(path, report: dict, figures: dict):
         for line in _wrap(
                 "pass: no critical problem and no best-practice violation. warn: best-practice violations (the file "
                 "is valid NWB but should be fixed before sharing). fail: the file breaks the NWB schema, or has a "
-                "problem NWB Inspector or DANDI rate as critical (e.g. no subject species, sex or age); DANDI will "
-                "refuse it. DANDI-ready: no schema errors and nothing DANDI's tools block on; the file name may "
-                "still need `dandi organize`.", 120):
+                "problem NWB Inspector or DANDI rate as critical (e.g. no subject species, sex or age). DANDI-ready: "
+                "what `dandi validate` (which `dandi upload` runs first) would accept: no schema error, no NWB "
+                "Inspector CRITICAL or check error under its DANDI configuration, and metadata DANDI can read. "
+                "The file name may still need `dandi organize`, which renames files automatically.", 120):
             pg.text(M, line, size=7, color=MUTED, dy=0.15)
         pg.y += 0.15
         cols = [(M, "#"), (M + 0.3, "file"), (M + 4.35, "size"), (M + 5.0, "status"), (M + 5.65, "crit."),
@@ -307,8 +309,12 @@ def write_pdf(path, report: dict, figures: dict):
                 pg.text(M, IMP_SHORT.get(g["importance"], g["importance"]), size=6.5, weight="bold",
                         color=IMP_COLOUR.get(g["importance"], INK))
                 pg.text(M + 0.75, f"{g['check']}", size=7, weight="bold")
-                pg.text(M + 3.9, f"{g['group']} · ×{g['count']}" + (f" · e.g. {where[:60]}" if where else ""), size=6.5,
-                        color=MUTED, dy=0.14)
+                meta = f"{g['group']} · ×{g['count']}" + (" · blocks DANDI" if g.get("blocking") else "")
+                if where:
+                    room = 64 - len(meta) - 9
+                    w = where if len(where) <= room else "…" + where[-(room - 1):]
+                    meta += f" · e.g. {w}"
+                pg.text(M + 3.9, meta, size=6.5, color=MUTED, dy=0.14)
                 for line in lines:
                     pg.text(M + 0.75, line, size=6.5, dy=0.125)
                 pg.y += 0.05
