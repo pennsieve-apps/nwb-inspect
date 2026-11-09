@@ -1,0 +1,300 @@
+cff-version: 1.2.0
+message: If you use this app, please cite it and the works it builds on, listed under references.
+type: software
+title: nwb-inspect
+abstract: 'Validates NWB files and summarises their contents: PyNWB schema validation against the namespaces cached
+  in each file, NWB Inspector best-practice checks (DANDI configuration by default), DANDI upload readiness checked
+  offline with the dandi library (required subject fields, metadata, dandi organize file names), a content summary
+  (subject, devices, probes, units, ophys, pose, intervals, extensions, storage) and small previews; writes report.json,
+  report.pdf and issues.csv. Part of the Pennsieve systems neuroscience workflows.'
+authors:
+- name: Pennsieve (University of Pennsylvania)
+contact:
+- given-names: Joost
+  family-names: Wagenaar
+  orcid: https://orcid.org/0009-0004-5925-5451
+  affiliation: University of Pennsylvania
+repository-code: https://github.com/pennsieve-apps/nwb-inspect
+license: Apache-2.0
+keywords:
+- neuroscience
+- nwb
+- dandi
+- validation
+- quality-control
+- neurophysiology
+references:
+- type: article
+  title: The Neurodata Without Borders ecosystem for neurophysiological data science
+  authors:
+  - family-names: Rübel
+    given-names: Oliver
+  - family-names: Tritt
+    given-names: Andrew
+  - family-names: Ly
+    given-names: Ryan
+  - family-names: Dichter
+    given-names: Benjamin K
+  - family-names: Ghosh
+    given-names: Satrajit
+  - family-names: Niu
+    given-names: Lawrence
+  - family-names: Baker
+    given-names: Pamela
+  - family-names: Soltesz
+    given-names: Ivan
+  - family-names: Ng
+    given-names: Lydia
+  - family-names: Svoboda
+    given-names: Karel
+  - family-names: Frank
+    given-names: Loren
+  - family-names: Bouchard
+    given-names: Kristofer E
+  year: 2022
+  journal: eLife
+  volume: '11'
+  start: e78362
+  doi: 10.7554/elife.78362
+  identifiers:
+  - type: other
+    value: '36193886'
+    description: PubMed ID
+- type: conference-paper
+  title: 'HDMF: Hierarchical Data Modeling Framework for Modern Science Data Standards'
+  authors:
+  - family-names: Tritt
+    given-names: Andrew J.
+  - family-names: Rubel
+    given-names: Oliver
+  - family-names: Dichter
+    given-names: Benjamin
+  - family-names: Ly
+    given-names: Ryan
+  - family-names: Kang
+    given-names: Donghe
+  - family-names: Chang
+    given-names: Edward F.
+  - family-names: Frank
+    given-names: Loren M.
+  - family-names: Bouchard
+    given-names: Kristofer
+  year: 2019
+  journal: 2019 IEEE International Conference on Big Data (Big Data)
+  start: '165'
+  end: '179'
+  doi: 10.1109/bigdata47090.2019.9005648
+  identifiers:
+  - type: other
+    value: '34632466'
+    description: PubMed ID
+- type: software
+  title: 'NeurodataWithoutBorders/nwbinspector: v0.7.2'
+  authors:
+  - name: Cody Baker
+  - name: Ben Dichter
+  - name: Ryan Ly
+  - name: Steph Prince
+  - name: Heberto Mayorquin
+  - name: Szonja Weigl
+  - name: Alessandra Trapani
+  - name: Oliver Ruebel
+  - name: Yaroslav Halchenko
+  - name: tom
+  - name: John T. Wodder II
+  - name: daphnedequatrebarbes
+  - name: Alessio Buccino
+  - name: Yutaka Sprague
+  - name: Roland Ferger
+  - name: Paul Adkisson-Floro
+  - name: Zach McKenzie
+  - name: Eivind Hennestad
+  year: 2026
+  doi: 10.5281/zenodo.10611726
+  publisher:
+    name: Zenodo
+  version: v0.7.2
+  repository-code: https://github.com/NeurodataWithoutBorders/nwbinspector
+- type: software
+  title: 'NeurodataWithoutBorders/pynwb: Latest'
+  authors:
+  - name: Andrew Tritt
+  - name: Ben Dichter
+  - name: Oliver Ruebel
+  - name: Ryan Ly
+  - name: Jean-Christophe Fillion-Robin
+  - name: nicain
+  - name: Steph Prince
+  - name: Thomas Braun
+  - name: NileGraddis
+  - name: Matthew Avaylon
+  - name: Doruk Ozturk
+  - name: Heberto Mayorquin
+  - name: Tom Davidson
+  - name: Cody Baker
+  - name: Szonja Weigl
+  - name: Jay R Bolton
+  - name: Yaroslav Halchenko
+  - name: Jed Perkins
+  - name: tom
+  - name: Mario Melara
+  - name: Eric Angevine Miller
+  - name: John H. Yearsley
+  - name: kevinalexbrown
+  - name: matthias
+  - name: Ariel Rokem
+  - name: Jeremy Magland
+  - name: Jonny Saunders
+  - name: Zach McKenzie
+  year: 2026
+  doi: 10.5281/zenodo.10582180
+  publisher:
+    name: Zenodo
+  version: latest
+  repository-code: https://github.com/NeurodataWithoutBorders/pynwb
+- type: software
+  title: 'hdmf-dev/hdmf: Latest'
+  authors:
+  - name: Andrew Tritt
+  - name: Ryan Ly
+  - name: Ben Dichter
+  - name: Oliver Ruebel
+  - name: Matthew Avaylon
+  - name: Jean-Christophe Fillion-Robin
+  - name: nicain
+  - name: Doruk Ozturk
+  - name: Thomas Braun
+  - name: Heberto Mayorquin
+  - name: Steph Prince
+  - name: Cody Baker
+  - name: NileGraddis
+  - name: Darin Erat Sleiter
+  - name: Jay R Bolton
+  - name: Jed Perkins
+  - name: Paul Adkisson-Floro
+  - name: matthias
+  - name: Ariel Rokem
+  - name: Yaroslav Halchenko
+  - name: Sejal
+  - name: John H. Yearsley
+  - name: Jeremy Magland
+  - name: Tom Davidson
+  - name: d-sot
+  - name: Ben Beasley
+  - name: Chadwick Boulay
+  year: 2026
+  doi: 10.5281/zenodo.8034516
+  publisher:
+    name: Zenodo
+  version: latest
+  repository-code: https://github.com/hdmf-dev/hdmf
+- type: software
+  title: 'dandi/dandi-cli: 0.82.0'
+  authors:
+  - name: Yaroslav Halchenko
+  - name: John T. Wodder II
+  - name: Horea Christian
+  - name: Satrajit Ghosh
+  - name: Cody Baker
+  - name: Isaac To
+  - name: Saksham Sharda
+  - name: Dorota Jarecka
+  - name: Ben Dichter
+  - name: Claude
+  - name: Kabilar Gunalan
+  - name: Amirali Moradniaei
+  - name: Dandi Bot
+  - name: Austin Macdonald
+  - name: Daniel Chiquito
+  - name: GitMate for @yarikoptic
+  - name: Jacob Nesbitt
+  - name: Mike VanDenburgh
+  - name: Aditya Singh
+  - name: Mary Elise Dedicke
+  - name: Brian Helba
+  - name: Heberto Mayorquin
+  - name: Kyle Meyer
+  - name: Nicole Tregoning
+  - name: Ryan Ly
+  - name: Jonny Saunders
+  - name: Kevin Z
+  - name: Dan LaManna
+  year: 2026
+  doi: 10.5281/zenodo.3692138
+  publisher:
+    name: Zenodo
+  version: 0.82.0
+  repository-code: https://github.com/dandi/dandi-cli
+- type: article
+  title: 'Matplotlib: A 2D Graphics Environment'
+  authors:
+  - family-names: Hunter
+    given-names: John D.
+  year: 2007
+  journal: Computing in Science & Engineering
+  volume: '9'
+  issue: '3'
+  start: '90'
+  end: '95'
+  doi: 10.1109/mcse.2007.55
+- type: data
+  title: IBL - Brain Wide Map
+  authors:
+  - name: International Brain Laboratory
+  year: 2026
+  doi: 10.48324/dandi.000409/0.260309.1324
+  publisher:
+    name: DANDI Archive
+  version: 0.260309.1324
+- type: data
+  title: Hippocampal CA1 one-photon calcium imaging and pose-tracked behavior in wild-type and 5xFAD mice across
+    four behavioral paradigms
+  authors:
+  - family-names: Plusnin
+    given-names: Viktor
+  - family-names: Pospelov
+    given-names: Nikita
+  year: 2026
+  doi: 10.48324/dandi.002047/0.261106.0903
+  publisher:
+    name: DANDI Archive
+  version: 0.261106.0903
+- type: data
+  title: Allen Institute - Visual Coding - Optical Physiology
+  authors:
+  - family-names: Baker
+    given-names: Cody
+  year: 2024
+  doi: 10.48324/dandi.000728/0.240827.1809
+  publisher:
+    name: DANDI Archive
+- type: data
+  title: Diversity in neural firing dynamics supports both rigid and learned hippocampal sequences
+  authors:
+  - family-names: Grosmark
+    given-names: Andres D.
+  - family-names: Buzsáki
+    given-names: György
+  year: 2026
+  doi: 10.48324/dandi.000044/0.261106.0236
+  publisher:
+    name: DANDI Archive
+  version: 0.261106.0236
+- type: data
+  title: Spike sorting biases and information loss in a detailed cortical model
+  authors:
+  - family-names: Laquitaine
+    given-names: Steeve
+  - family-names: Imbeni
+    given-names: Milo
+  - family-names: Tharayil
+    given-names: Joseph
+  - family-names: Isbister
+    given-names: James
+  - family-names: Reimann
+    given-names: Michael
+  year: 2026
+  doi: 10.48324/dandi.001250/0.261108.1908
+  publisher:
+    name: DANDI Archive
+  version: 0.261108.1908

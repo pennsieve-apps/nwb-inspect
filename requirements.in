@@ -1,0 +1,11 @@
+# Direct dependencies, pinned; requirements.txt is the full set resolved from these in the base image.
+nwbinspector==0.7.2
+dandi==0.82.0
+dandischema==0.14.0
+pynwb==4.2.0
+hdmf==6.2.0
+hdmf-zarr==0.14.0
+zarr==3.4.2
+h5py==3.16.0
+numpy==2.5.4
+matplotlib==3.11.2
