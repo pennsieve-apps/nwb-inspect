@@ -282,7 +282,7 @@ def pose_frame(t: Tree, s: dict, title: str):
     fig.tight_layout()
     missing = int((~good).sum())
     cap = (f"Keypoints of {p['path']} ({p['n_keypoints']} keypoints, {n:,} frames) at frame {i}, coloured by "
-           f"confidence, " + ("image coordinates (y down)" if image_coords else f"in {unit} (y up)") + "; grey: the path of '{names[0]}' over {b - a} frames around it"
+           f"confidence, " + ("image coordinates (y down)" if image_coords else f"in {unit} (y up)") + f"; grey: the path of '{names[0]}' over {b - a} frames around it"
            + (f"; {missing} keypoint(s) missing in this frame" if missing else "")
            + ". Check that the points sit on a plausible body shape (skeleton lines are not crossed), that "
            "confidence is high on visible body parts, and that the path is smooth rather than jumping.")

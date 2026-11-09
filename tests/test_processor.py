@@ -83,6 +83,7 @@ def test_exit_and_outputs(default_run):
     summ = json.loads((out / "summary.json").read_text())
     assert summ["app"] == "nwb-inspect" and summ["n_files"] == len(files)
     assert all(Path(out / fig["path"]).is_file() and fig["caption"] for fig in summ["figures"])
+    assert not any("{" in fig["caption"] for fig in summ["figures"])  # every caption placeholder is filled in
     rows = list(csv.DictReader(open(out / "issues.csv")))
     assert len(rows) == sum(len(f["messages"]) for f in files.values())
 
