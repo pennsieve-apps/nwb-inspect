@@ -1,0 +1,3 @@
+-r requirements.txt
+ndx-pose==0.4.0
+pytest==9.2.0

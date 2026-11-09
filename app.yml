@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://schemas.pennsieve.io/app-manifest/v1.json
+schemaVersion: "1.0"
+application:
+  name: NWB Inspect
+  description: >-
+    Is my NWB file valid and ready for DANDI? For every NWB file in the input (HDF5 .nwb files and
+    NWB-Zarr folders): schema validation with PyNWB against the namespaces cached in the file (so
+    extensions such as ndx-pose are checked too), NWB Inspector best-practice checks (its DANDI
+    configuration by default), DANDI upload readiness checked offline with the dandi library
+    (subject id, species, sex and age; DANDI's metadata model; the file name `dandi organize` would
+    give it), and a summary of what the file holds (subject, devices, probes, units, ophys, pose,
+    trials and other intervals, extensions, compression of the largest datasets) with small previews
+    (spike raster, ΔF/F traces, a pose frame, an interval timeline). Writes report.pdf for a PI or
+    data manager, report.json and issues.csv. Reads attributes and small slices only, so it is fast
+    on large files and can be the last step of any workflow; FAIL_ON=critical makes it a gate.
+  type: processor
+  tags:
+    - neuroscience
+    - nwb
+    - dandi
+    - quality-control
+    - validation
+    - electrophysiology
+    - calcium-imaging
+    - behavior
+    - report
+runtime:
+  cpu: 1024
+  # Measured on the demo data (all NWB files of the five demos and the apps' NWB outputs, up to 6.1 GB
+  # per file; linux/amd64 under emulation): see README "Runtime".
+  memory: 2048
+  # A light step within the platform's Lambda limits (memory <= 10240 MiB, timeout <= 900 s, image
+  # < 10 GB): the platform decides Lambda eligibility from these values (app-deploy-service docs/builds.md).
+  computeTypes:
+    - standard
+  timeoutSeconds: 900
+parameters:
+  - name: CHECKS
+    type: string
+    description: >-
+      Which validations to run, comma-separated: schema (PyNWB validator), inspector (NWB Inspector),
+      dandi (DANDI upload readiness). 'none' = only the content summary and previews.
+    defaultValue: schema,inspector,dandi
+  - name: INSPECTOR_CONFIG
+    type: string
+    description: >-
+      NWB Inspector configuration: dandi (subject id, species, sex and age are critical, as DANDI
+      requires) or default (NWB Inspector's own importance levels). The dandi check always applies
+      DANDI's rules.
+    defaultValue: dandi
+    validValues:
+      - dandi
+      - default
+  - name: IMPORTANCE_THRESHOLD
+    type: string
+    description: Report messages of this importance and above; lower ones are left out of every output and of the status.
+    defaultValue: BEST_PRACTICE_SUGGESTION
+    validValues:
+      - BEST_PRACTICE_SUGGESTION
+      - BEST_PRACTICE_VIOLATION
+      - CRITICAL
+  - name: FAIL_ON
+    type: string
+    description: >-
+      none: the step always succeeds and reports. critical: the step fails (after writing the report)
+      when any file has status fail (schema error or a critical issue), to stop a workflow on invalid NWB.
+    defaultValue: none
+    validValues:
+      - none
+      - critical
+  - name: PREVIEWS
+    type: boolean
+    description: Draw small previews (spike raster, ΔF/F traces, a pose frame, interval timeline) from bounded slices of each file.
+    defaultValue: true
+  - name: LABEL
+    type: string
+    description: Optional extra folder level (nwb-inspect/<LABEL>/) when the app runs more than once in a workflow; empty = none.
+    defaultValue: ""
+    required: false
+  - name: THREADS
+    type: integer
+    description: Threads for numpy/BLAS; 0 = from the container's CPU quota.
+    defaultValue: 0
+    min: 0
+inputs:
+  - name: nwb
+    description: >-
+      One or more NWB files, found anywhere under the input (recursively, following links): HDF5 .nwb
+      files and NWB-Zarr folders (*.nwb.zarr). Other files are ignored. Optional sessions.csv
+      (session_id, path, ...) to name the files' sessions.
+    mediaTypes:
+      - "application/x-hdf5; profile=nwb"
+      - application/vnd.pennsieve.nwb-zarr
+    container: directory
+    placement: subfolder
+    required: true
+outputs:
+  - name: report
+    description: >-
+      nwb-inspect/report.pdf (cover page with every file's status, then per file its contents, issues
+      and previews), report.json (per file: status pass/warn/fail, DANDI readiness, counts per importance,
+      every message, the content summary), issues.csv (file, check_group, importance, check_name,
+      object_type, object_name, location, message), summary.json (for neuro-report), provenance.json and
+      the preview PNGs (<file_id>_raster.png, _traces.png, _pose.png, _timeline.png).
+    mediaTypes:
+      - application/json
+      - application/pdf
+      - text/csv
+      - image/png
+
+# How a release is tested before it is made public: the inputs a review run uses.
+# See app-deploy-service docs/app-manifest-review.md. The platform generator image has no pynwb, so the
+# review input is the committed synthetic fixture (a clean file and four with planted problems, < 4 MB).
+review:
+  version: 1
+  inputs:
+    nwb:
+      files:
+        - sample-input/review/*.nwb
