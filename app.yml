@@ -3,7 +3,8 @@ schemaVersion: "1.0"
 application:
   name: NWB Inspect
   description: >-
-    Is my NWB file valid and ready for DANDI? For every NWB file in the input (HDF5 .nwb files and
+    Validates NWB files and summarises what they hold: PyNWB schema validation, NWB Inspector
+    best-practice checks, DANDI upload readiness, and previews of the data inside. For every NWB file in the input (HDF5 .nwb files and
     NWB-Zarr folders): schema validation with PyNWB against the namespaces cached in the file (so
     extensions such as ndx-pose are checked too), NWB Inspector best-practice checks (its DANDI
     configuration by default), DANDI upload readiness checked offline with the dandi library
