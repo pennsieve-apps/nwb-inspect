@@ -17,7 +17,7 @@ Institute (DANDI:000728, published by Cody Baker), Andres Grosmark and György B
 and Steeve Laquitaine, Milo Imbeni, Joseph Tharayil, James Isbister and Michael Reimann
 (DANDI:001250); DOIs under [Citations](#citations).
 
-**What it does.** "Is my NWB file valid, and can I put it on DANDI?" For every NWB file in the input
+**What it does.** Validates NWB files and summarises what they hold, whatever they are for: an archive upload, a lab's own QC, or the last step of a workflow. For every NWB file in the input
 (HDF5 `.nwb` files and NWB-Zarr folders, found anywhere in the input) it
 
 1. **validates the file against the NWB schema** with PyNWB, using the schema saved inside the file,
